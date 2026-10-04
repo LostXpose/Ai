@@ -7,9 +7,11 @@ import com.example.data.local.AppDatabase
 import com.example.data.local.ChatMessageEntity
 import com.example.data.local.ChatSessionEntity
 import com.example.data.local.DownloadedModelEntity
+import com.example.data.model.AiAgent
 import com.example.data.model.AppSettings
 import com.example.data.model.InferenceMetrics
 import com.example.data.model.ThemeMode
+import com.example.data.repository.AgentRepository
 import com.example.data.repository.ChatRepository
 import com.example.data.repository.InferenceEngine
 import com.example.data.repository.ModelRepository
@@ -36,6 +38,7 @@ data class UiState(
   val storageBreakdown: StorageBreakdown? = null,
   val benchmarkRunning: Boolean = false,
   val benchmarkScoreTokSec: Double? = null,
+  val hasStoragePermission: Boolean = false,
   val infoMessage: String? = null
 )
 
@@ -45,6 +48,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
   val modelRepo = ModelRepository(application, database.modelDao())
   val telemetryManager = TelemetryManager(application)
   val inferenceEngine = InferenceEngine(telemetryManager)
+  val agentRepo = AgentRepository()
+
+  val allAgents: StateFlow<List<AiAgent>> = agentRepo.agents
+  val activeAgent: StateFlow<AiAgent> = agentRepo.activeAgent
 
   private val _settings = MutableStateFlow(AppSettings())
   val settings: StateFlow<AppSettings> = _settings.asStateFlow()
@@ -204,12 +211,36 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
   }
 
+  fun selectAgent(agentId: String) {
+    agentRepo.setActiveAgent(agentId)
+    val agent = agentRepo.activeAgent.value
+    showToast("Active AI Agent: ${agent.name}")
+  }
+
+  fun createCustomAgent(agent: AiAgent) {
+    agentRepo.addCustomAgent(agent)
+    showToast("Created custom agent: ${agent.name}")
+  }
+
+  fun deleteAgent(agentId: String) {
+    agentRepo.deleteAgent(agentId)
+    showToast("Agent removed")
+  }
+
+  fun updateStoragePermission(granted: Boolean) {
+    _uiState.update { it.copy(hasStoragePermission = granted) }
+    if (granted) {
+      showToast("Storage permission granted!")
+    }
+  }
+
   fun sendMessage(prompt: String) {
     val cleanPrompt = prompt.trim()
     if (cleanPrompt.isBlank()) return
 
     val sessionId = _uiState.value.currentSessionId ?: return
     val currentModel = _uiState.value.activeModelName
+    val currentAgent = activeAgent.value
 
     viewModelScope.launch {
       // 1. Save user message to Room
@@ -225,16 +256,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
       // 2. Prepare context history
       val history = _activeMessages.value.map { it.role to it.content }
 
-      // 3. Stream generation
+      // 3. Stream generation with active Agent system instructions
       var streamedContent = ""
       var lastTokPerSec = 0.0
       var lastTokenCount = 0
+
+      val effectiveSettings = _settings.value.copy(
+        systemPrompt = "${currentAgent.systemPrompt} ${_settings.value.systemPrompt}".trim(),
+        temperature = currentAgent.temperature
+      )
 
       activeGenerationJob = launch {
         val result = inferenceEngine.streamGenerate(
           userPrompt = cleanPrompt,
           history = history,
-          settings = _settings.value,
+          settings = effectiveSettings,
           modelName = currentModel
         ) { chunk, tokens, speed ->
           streamedContent += chunk
@@ -251,7 +287,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
           tokensCount = result.tokensGenerated,
           tokPerSec = result.tokPerSec,
           latencyMs = result.latencyMs,
-          modelName = currentModel
+          modelName = "${currentAgent.name} • $currentModel"
         )
 
         _uiState.update { it.copy(isGenerating = false, streamingChunk = "") }

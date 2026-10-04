@@ -35,6 +35,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.ui.MainViewModel
+import com.example.ui.screens.AgentsScreen
 import com.example.ui.screens.ChatScreen
 import com.example.ui.screens.DocsScreen
 import com.example.ui.screens.ModelsScreen
@@ -100,7 +101,17 @@ fun NeonLLMApp(viewModel: MainViewModel) {
       when (currentScreen) {
         Screen.CHAT -> ChatScreen(
           viewModel = viewModel,
-          onNavigateToModels = { currentScreen = Screen.MODELS }
+          onNavigateToModels = { currentScreen = Screen.MODELS },
+          onNavigateToAgents = { currentScreen = Screen.AGENTS }
+        )
+        Screen.AGENTS -> AgentsScreen(
+          viewModel = viewModel,
+          onNavigateToChat = { starter ->
+            currentScreen = Screen.CHAT
+            if (starter != null) {
+              viewModel.sendMessage(starter)
+            }
+          }
         )
         Screen.MODELS -> ModelsScreen(
           viewModel = viewModel,

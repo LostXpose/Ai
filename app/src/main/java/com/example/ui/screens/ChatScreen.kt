@@ -7,6 +7,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -31,6 +32,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.DeleteSweep
@@ -39,6 +41,7 @@ import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Thermostat
@@ -63,13 +66,18 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.R
 import com.example.data.local.ChatMessageEntity
+import com.example.data.model.AiAgent
 import com.example.ui.MainViewModel
 import com.example.ui.components.LiveStatusDot
 import com.example.ui.components.MetricPill
@@ -93,12 +101,14 @@ import com.example.ui.theme.TextSecondary
 @Composable
 fun ChatScreen(
   viewModel: MainViewModel,
-  onNavigateToModels: () -> Unit
+  onNavigateToModels: () -> Unit,
+  onNavigateToAgents: () -> Unit
 ) {
   val uiState by viewModel.uiState.collectAsState()
   val settings by viewModel.settings.collectAsState()
   val metrics by viewModel.liveMetrics.collectAsState()
   val messages by viewModel.activeMessages.collectAsState()
+  val activeAgent by viewModel.activeAgent.collectAsState()
   val context = LocalContext.current
 
   var inputText by remember { mutableStateOf("") }
@@ -123,10 +133,12 @@ fun ChatScreen(
     PerformanceTelemetryHeader(
       metrics = metrics,
       activeModelName = uiState.activeModelName,
+      activeAgent = activeAgent,
       isCloudMode = settings.isCloudApiMode,
       onNewChat = { viewModel.createNewChat() },
       onClearChat = { viewModel.clearCurrentChat() },
-      onSwitchModel = onNavigateToModels
+      onSwitchModel = onNavigateToModels,
+      onSwitchAgent = onNavigateToAgents
     )
 
     // 2. Chat messages list or empty state
@@ -138,11 +150,13 @@ fun ChatScreen(
       if (messages.isEmpty() && uiState.streamingChunk.isEmpty()) {
         ChatEmptyState(
           activeModel = uiState.activeModelName,
+          activeAgent = activeAgent,
           isCloud = settings.isCloudApiMode,
           onSelectPrompt = { prompt ->
             inputText = prompt
             viewModel.sendMessage(prompt)
-          }
+          },
+          onOpenAgents = onNavigateToAgents
         )
       } else {
         LazyColumn(
@@ -197,10 +211,12 @@ fun ChatScreen(
 fun PerformanceTelemetryHeader(
   metrics: com.example.data.model.InferenceMetrics,
   activeModelName: String,
+  activeAgent: AiAgent,
   isCloudMode: Boolean,
   onNewChat: () -> Unit,
   onClearChat: () -> Unit,
-  onSwitchModel: () -> Unit
+  onSwitchModel: () -> Unit,
+  onSwitchAgent: () -> Unit
 ) {
   Surface(
     color = CyberDarkSurface,
@@ -209,7 +225,7 @@ fun PerformanceTelemetryHeader(
       .border(BorderStroke(1.dp, CyberCardBorder.copy(alpha = 0.5f)))
   ) {
     Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
-      // Top row: Active model pill + action buttons
+      // Top row: Active model pill + active agent pill + action buttons
       Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
@@ -217,28 +233,53 @@ fun PerformanceTelemetryHeader(
       ) {
         Row(
           verticalAlignment = Alignment.CenterVertically,
-          modifier = Modifier
-            .clip(RoundedCornerShape(8.dp))
-            .background(Color(0xFF161B2E))
-            .clickable { onSwitchModel() }
-            .padding(horizontal = 10.dp, vertical = 6.dp)
+          horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-          LiveStatusDot(isGenerating = metrics.isGenerating)
-          Spacer(modifier = Modifier.width(6.dp))
-          Text(
-            text = activeModelName,
-            color = if (isCloudMode) NeonAmber else NeonCyan,
-            fontSize = 13.sp,
-            fontWeight = FontWeight.Bold,
-            fontFamily = FontFamily.Monospace
-          )
-          Spacer(modifier = Modifier.width(4.dp))
-          Text(
-            text = if (isCloudMode) "☁️ CLOUD" else "⚡ LOCAL (0 TOK)",
-            color = if (isCloudMode) NeonAmber else NeonGreen,
-            fontSize = 10.sp,
-            fontWeight = FontWeight.SemiBold
-          )
+          // Model Pill
+          Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+              .clip(RoundedCornerShape(8.dp))
+              .background(Color(0xFF161B2E))
+              .clickable { onSwitchModel() }
+              .padding(horizontal = 8.dp, vertical = 6.dp)
+          ) {
+            LiveStatusDot(isGenerating = metrics.isGenerating)
+            Spacer(modifier = Modifier.width(5.dp))
+            Text(
+              text = activeModelName,
+              color = if (isCloudMode) NeonAmber else NeonCyan,
+              fontSize = 12.sp,
+              fontWeight = FontWeight.Bold,
+              fontFamily = FontFamily.Monospace
+            )
+          }
+
+          // Agent Pill
+          Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+              .clip(RoundedCornerShape(8.dp))
+              .background(Color(activeAgent.glowColorHex).copy(alpha = 0.12f))
+              .border(1.dp, Color(activeAgent.glowColorHex).copy(alpha = 0.4f), RoundedCornerShape(8.dp))
+              .clickable { onSwitchAgent() }
+              .padding(horizontal = 8.dp, vertical = 6.dp)
+          ) {
+            Icon(
+              imageVector = Icons.Default.SmartToy,
+              contentDescription = null,
+              tint = Color(activeAgent.glowColorHex),
+              modifier = Modifier.size(14.dp)
+            )
+            Spacer(modifier = Modifier.width(4.dp))
+            Text(
+              text = activeAgent.name,
+              color = Color(activeAgent.glowColorHex),
+              fontSize = 11.sp,
+              fontWeight = FontWeight.Bold,
+              maxLines = 1
+            )
+          }
         }
 
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -319,73 +360,85 @@ fun PerformanceTelemetryHeader(
 @Composable
 fun ChatEmptyState(
   activeModel: String,
+  activeAgent: AiAgent,
   isCloud: Boolean,
-  onSelectPrompt: (String) -> Unit
+  onSelectPrompt: (String) -> Unit,
+  onOpenAgents: () -> Unit
 ) {
-  val prompts = listOf(
-    "পাইথনে একটি দ্রুত সার্চ অ্যালগরিদম লিখে দাও",
-    "How does 4-bit GGUF quantization save phone RAM?",
-    "Write a short cyberpunk AI poem in Bengali",
-    "Explain Kotlin Coroutines StateFlow vs SharedFlow",
-    "আমার ডিভাইসের লোকাল স্টোরেজে আর কোন কোন মডেল চলবে?"
-  )
+  val agentColor = Color(activeAgent.glowColorHex)
 
   Column(
     modifier = Modifier
       .fillMaxSize()
-      .padding(20.dp),
+      .padding(16.dp),
     horizontalAlignment = Alignment.CenterHorizontally,
     verticalArrangement = Arrangement.Center
   ) {
+    // Hero Picture: Cyberpunk Robot drinking water
     Box(
       modifier = Modifier
-        .size(64.dp)
+        .size(96.dp)
         .clip(CircleShape)
-        .background(NeonCyan.copy(alpha = 0.12f))
-        .border(1.5.dp, NeonCyan, CircleShape),
-      contentAlignment = Alignment.Center
+        .border(2.dp, agentColor, CircleShape)
+        .clickable { onOpenAgents() }
     ) {
-      Icon(
-        imageVector = Icons.Default.Psychology,
-        contentDescription = null,
-        tint = NeonCyan,
-        modifier = Modifier.size(36.dp)
-      )
+      if (activeAgent.imageResId != null) {
+        Image(
+          painter = painterResource(id = activeAgent.imageResId),
+          contentDescription = "Robot drinking water avatar",
+          modifier = Modifier.fillMaxSize(),
+          contentScale = ContentScale.Crop
+        )
+      } else {
+        Box(
+          modifier = Modifier
+            .fillMaxSize()
+            .background(agentColor.copy(alpha = 0.15f)),
+          contentAlignment = Alignment.Center
+        ) {
+          Icon(
+            imageVector = Icons.Default.SmartToy,
+            contentDescription = null,
+            tint = agentColor,
+            modifier = Modifier.size(44.dp)
+          )
+        }
+      }
     }
 
-    Spacer(modifier = Modifier.height(14.dp))
+    Spacer(modifier = Modifier.height(12.dp))
 
     Text(
-      text = "NeonLLM Engine Ready",
-      fontSize = 20.sp,
+      text = activeAgent.name,
+      fontSize = 19.sp,
       fontWeight = FontWeight.Bold,
       color = TextPrimary
     )
 
-    Spacer(modifier = Modifier.height(4.dp))
+    Spacer(modifier = Modifier.height(2.dp))
 
     Text(
-      text = if (isCloud) "Cloud API Mode Active" else "100% Offline Local Neural Engine • No Tokens • Unlimited Free",
+      text = activeAgent.tagline,
       fontSize = 12.sp,
-      color = if (isCloud) NeonAmber else NeonGreen,
-      fontWeight = FontWeight.Medium
+      color = agentColor,
+      textAlign = TextAlign.Center
     )
 
-    Spacer(modifier = Modifier.height(18.dp))
+    Spacer(modifier = Modifier.height(12.dp))
 
     Row(
       horizontalArrangement = Arrangement.spacedBy(8.dp),
       modifier = Modifier.padding(horizontal = 8.dp)
     ) {
       NeonBadge(text = "0 Tokens Billed", color = NeonGreen)
-      NeonBadge(text = "Full Offline", color = NeonCyan)
-      NeonBadge(text = "Privacy First", color = NeonViolet)
+      NeonBadge(text = activeModel, color = NeonCyan)
+      NeonBadge(text = "Agent Active", color = agentColor)
     }
 
-    Spacer(modifier = Modifier.height(24.dp))
+    Spacer(modifier = Modifier.height(20.dp))
 
     Text(
-      text = "Tap a prompt to test inference speed:",
+      text = "Quick Tasks for ${activeAgent.name}:",
       fontSize = 12.sp,
       color = TextMuted,
       modifier = Modifier.align(Alignment.Start)
@@ -397,18 +450,23 @@ fun ChatEmptyState(
       verticalArrangement = Arrangement.spacedBy(8.dp),
       modifier = Modifier.fillMaxWidth()
     ) {
-      for (prompt in prompts) {
+      for (prompt in activeAgent.starterPrompts) {
         Row(
           modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(10.dp))
             .background(CyberCardBg)
-            .border(1.dp, CyberCardBorder, RoundedCornerShape(10.dp))
+            .border(1.dp, agentColor.copy(alpha = 0.25f), RoundedCornerShape(10.dp))
             .clickable { onSelectPrompt(prompt) }
             .padding(12.dp),
           verticalAlignment = Alignment.CenterVertically
         ) {
-          Text(text = "⚡", fontSize = 14.sp)
+          Icon(
+            imageVector = Icons.Default.AutoAwesome,
+            contentDescription = null,
+            tint = agentColor,
+            modifier = Modifier.size(16.dp)
+          )
           Spacer(modifier = Modifier.width(8.dp))
           Text(
             text = prompt,
