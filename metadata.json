@@ -1,0 +1,6 @@
+{
+  "name": "NeonLLM",
+  "description": "Offline local LLM chat engine, model hub downloader, local storage manager, real-time performance telemetry, and API key mode.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
